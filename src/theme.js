@@ -1,3 +1,6 @@
+// Contains the JS source code for the Doony theme itself. This file is
+// concatenated with other JS files into doony.js, and then minified into
+// doony.min.js
 jQuery(function($) {
 
     var colors = [
@@ -9,7 +12,16 @@ jQuery(function($) {
         '#8fbe00', // lime yellow
     ];
 
+    var Alert = {
+        ERROR : "alert-danger",
+        WARNING: "alert-warning"
+    };
+
     var getSubdomain = function(domain) {
+        if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(domain)) {
+            // Looks like an IP address, so return as-is.
+            return domain;
+        }
         var parts = domain.split(".");
         if (parts.length <= 2) {
             return parts.join(".");
@@ -19,7 +31,7 @@ jQuery(function($) {
     };
 
     var hashCode = function(string) {
-        var hash = 0, i, char;
+        var hash = 0, i, l, char;
         if (string.length === 0) return hash;
         for (i = 0, l = string.length; i < l; i++) {
             char  = string.charCodeAt(i);
@@ -89,24 +101,33 @@ jQuery(function($) {
         }
     };
 
-    var showButterBar = function(message) {
+    var showButterBar = function(message, alertName) {
         var div = document.createElement('div');
-        div.className = 'alert alert-warning doony-alert';
+        div.className = 'alert doony-alert ' + alertName;
         div.innerHTML = message;
         $("#main-panel").prepend(div);
     };
 
-    var doonyTitleLink = $("#top-panel a").first();
     var domain = getSubdomain(window.location.hostname);
-    doonyTitleLink.html("<div id='doony-title'>" + domain + "</div>");
+    var doonyTitleLink = $('#jenkins-home-link');
+    if (doonyTitleLink.length === 0) {
+        doonyTitleLink = $("#top-panel a").first();
+        doonyTitleLink.html("<div id='doony-title'>" + domain + "</div>");
+    } else {
+        doonyTitleLink.html(domain);
+        if (doonyTitleLink.parent("td").length === 0) {
+            // ugh, hack
+            doonyTitleLink.addClass("new-header-link");
+        }
+    }
 
     var color = colors[Math.abs(hashCode(domain)) % colors.length];
-    $("#top-panel").css('background-color', color);
+    $("#top-panel, #header").css('background-color', color);
 
     // Remove icons from the left hand menu and strip nbsp's
     $(".task").each(function() {
         $("a img", $(this)).remove();
-        $(this).html(function(idx, oldHtml) {
+        $(this).html(function(_, oldHtml) {
             var replaced = oldHtml.replace(/&nbsp;/g, "", "g");
             return replaced;
         });
@@ -123,7 +144,7 @@ jQuery(function($) {
     var updateConfiguration = function(jobUrl, name) {
         $.getJSON(jobUrl + name + 'api/json?tree=lastBuild[number]', function(data) {
             if (data.lastBuild !== null && 'number' in data.lastBuild) {
-                $("#matrix .model-link").each(function(idx, item) {
+                $("#matrix .model-link").each(function(_, item) {
                     if (item.getAttribute('href') === name) {
                         var href = jobUrl + name + data.lastBuild.number + '/consoleFull';
                         $(item).next(".doony-callout").children("a").attr('href', href);
@@ -145,7 +166,7 @@ jQuery(function($) {
             $("#matrix .model-link").wrap("<div class='doony-downstream-link'>");
             // Create the div, even though we don't have the HREF yet, so the
             // UI looks consistent
-            $("#matrix .model-link").each(function(idx, item) {
+            $("#matrix .model-link").each(function(_, item) {
                 var message = "View console output for the latest build";
                 $(item).after(getCallout(message, null));
             });
@@ -241,13 +262,17 @@ jQuery(function($) {
         replaceBouncingFloatyBall("img[src*='red_anime.gif']", '#d9534f');
         replaceBouncingFloatyBall("img[src*='blue_anime.gif']", green);
         replaceBouncingFloatyBall("img[src*='grey_anime.gif']", '#999');
+        replaceBouncingFloatyBall("img[src*='aborted_anime.gif']", '#999');
         replaceBouncingFloatyBall("img[src*='yellow_anime.gif']", '#f0ad4e');
     }, 10);
     setInterval(function() {
-        replaceFloatyBall("img[src*='/grey.png']", "aborted");
+        replaceFloatyBall("img[src*='/aborted.png']", "aborted");
         replaceFloatyBall("img[src*='/blue.png']", "success");
         replaceFloatyBall("img[src*='/red.png']", "failure");
         replaceFloatyBall("img[src*='/yellow.png']", "warning");
+        replaceFloatyBall("img[src*='/grey.png']", "aborted");
+        replaceFloatyBall("img[src*='/nobuilt.png']", "notbuilt");
+        replaceFloatyBall("img[src*='/disabled.png']", "notbuilt");
     }, 10);
 
     if (isJobHomepage(window.location.pathname)) {
@@ -283,9 +308,15 @@ jQuery(function($) {
                     ) {
                         message += " <a href='#' id='doony-clear-build'>Cancel the current build</a>";
                     }
-                    showButterBar(message);
+                    showButterBar(message, Alert.WARNING);
                     redirectToNewJobConsole(getJobUrl(window.location.pathname),
                         data.nextBuildNumber);
+                }).fail(function(jqXHR) {
+                    if (jqXHR.status === 403) {
+                        showButterBar("Cannot create build. Maybe you need to log in or have the 'build' permission.", Alert.ERROR);
+                    } else {
+                        showButterBar("An error occured. Please try again.", Alert.ERROR);
+                    }
                 });
             });
         });
